@@ -1,0 +1,100 @@
+// Rule-based narrative explanation engine for Risk Pool Simulation v1
+
+import type { ResultSet } from '../types/simulation';
+
+export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): string {
+  const parts: string[] = [];
+
+  const { decisions, combinedRatio, netIncome, grossUltimateLoss, grossPremium,
+    reinsuranceRecovery, investmentIncome,
+    newMembers, withdrawnMembers, shockLossIncurred, fundingAdequacyIndicator,
+    priorYearDevelopment, endingSurplus } = result;
+
+  // --- Rate Change ---
+  if (decisions.rateChange > 0.10) {
+    parts.push(`You implemented a significant rate increase of ${pct(decisions.rateChange)}, which improved premium adequacy. However, this level of increase puts competitive pressure on member retention.`);
+  } else if (decisions.rateChange > 0.03) {
+    parts.push(`A moderate rate increase of ${pct(decisions.rateChange)} was applied, helping maintain premium adequacy.`);
+  } else if (decisions.rateChange < -0.05) {
+    parts.push(`You chose to decrease rates by ${pct(Math.abs(decisions.rateChange))}, improving competitiveness.`);
+  } else if (Math.abs(decisions.rateChange) <= 0.03) {
+    parts.push(`Rates were held roughly flat.`);
+  }
+
+  // --- Underwriting ---
+  if (decisions.underwritingStrictness <= 2) {
+    parts.push(`With very flexible underwriting, the pool was highly accessible, supporting member growth. However, this creates adverse selection risk.`);
+  } else if (decisions.underwritingStrictness >= 8) {
+    parts.push(`Strict underwriting standards improved average risk quality, reducing expected losses and tail risk.`);
+  }
+
+  // --- Shock Loss ---
+  if (shockLossIncurred) {
+    parts.push(`A shock loss event occurred this year, significantly increasing gross losses.`);
+  }
+
+  // --- Loss Performance ---
+  const lossRatio = grossUltimateLoss / Math.max(grossPremium, 1);
+  if (lossRatio > 0.90) {
+    parts.push(`Gross loss performance was unfavorable with a loss ratio of ${pct(lossRatio)}.`);
+  } else if (lossRatio < 0.55) {
+    parts.push(`Gross loss performance was strong with a favorable loss ratio of ${pct(lossRatio)}.`);
+  }
+
+  // --- Combined Ratio ---
+  if (combinedRatio > 1.10) {
+    parts.push(`The combined ratio was ${pct(combinedRatio)}, indicating an underwriting loss.`);
+  } else if (combinedRatio < 0.90) {
+    parts.push(`An excellent combined ratio of ${pct(combinedRatio)} reflects strong underwriting performance.`);
+  }
+
+  // --- Reinsurance ---
+  if (decisions.reinsuranceLevel === 0) {
+    parts.push(`No reinsurance protection was in place.`);
+  } else if (reinsuranceRecovery > 0) {
+    parts.push(`Reinsurance generated $${fmt(reinsuranceRecovery)} in recoveries, reducing net losses.`);
+  } else if (decisions.reinsuranceLevel > 0) {
+    parts.push(`Reinsurance was in place but losses did not reach the attachment point.`);
+  }
+
+  // --- Investment ---
+  if (decisions.investmentRisk >= 7) {
+    if (investmentIncome > 0) {
+      parts.push(`Aggressive investment positioning generated strong investment income of $${fmt(investmentIncome)}.`);
+    } else {
+      parts.push(`Aggressive investment positioning resulted in an investment loss.`);
+    }
+  } else if (decisions.investmentRisk <= 2) {
+    parts.push(`Conservative investment strategy produced modest but stable investment income of $${fmt(investmentIncome)}.`);
+  }
+
+  // --- Membership ---
+  if (newMembers > 3) {
+    parts.push(`${newMembers} new members joined the pool this year.`);
+  }
+  if (withdrawnMembers > 3) {
+    parts.push(`${withdrawnMembers} members withdrew from the pool.`);
+  }
+
+  // --- Funding ---
+  if (fundingAdequacyIndicator === 'Deficient') {
+    parts.push(`The pool's funding position is rated Deficient.`);
+  }
+
+  // --- Net outcome ---
+  if (netIncome > 0) {
+    parts.push(`Overall, the pool generated net income of $${fmt(netIncome)}, strengthening surplus to $${fmt(endingSurplus)}.`);
+  } else {
+    parts.push(`Overall, the pool experienced a net loss of $${fmt(Math.abs(netIncome))}, reducing surplus to $${fmt(endingSurplus)}.`);
+  }
+
+  return parts.join(' ');
+}
+
+function pct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+function fmt(n: number): string {
+  return Math.round(n).toLocaleString('en-US');
+}
