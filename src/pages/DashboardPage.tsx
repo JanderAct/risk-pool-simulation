@@ -86,7 +86,7 @@ export default function DashboardPage({ lockedResults, startingFinancials, curre
           label="Payroll Exposure ($M)"
           value={`$${formatNumber(displayExposure, 2)}M`}
           icon={<BarChart2 size={16} />}
-          sub={`Market total: $${formatNumber(startingFinancials.totalFinancials.totalMarketExposure, 2)}M`}
+          sub={`Market total: $${formatNumber(startingFinancials.totalMarketExposure, 2)}M`}
         />
       </div>
 

@@ -61,16 +61,21 @@ export default function App() {
       const saved = localStorage.getItem('riskpool_gamestate');
       if (saved) {
         const { gameState: gs, startingFinancials: sf, initialMembers: im, currentDecisions: cd } = JSON.parse(saved);
-        if (gs && sf) {
+        // Validate critical fields exist before restoring
+        if (gs && sf && sf.totalMarketExposure !== undefined && sf.surplus !== undefined) {
           setGameState(gs);
           setStartingFinancials(sf);
           setInitialMembers(im ?? []);
           setCurrentDecisions(cd ?? defaultDecisions(gs.currentYearNumber));
           setActiveTab('dashboard');
+        } else {
+          // Bad saved state - clear it
+          localStorage.removeItem('riskpool_gamestate');
         }
       }
     } catch {
-      // ignore parse errors
+      // ignore parse errors - clear corrupted data
+      localStorage.removeItem('riskpool_gamestate');
     }
   }, []);
 
