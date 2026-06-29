@@ -2,7 +2,7 @@
 // Exposure = payroll in millions of dollars
 // Premium = Exposure($M) × Rate_per_$100_payroll × 10,000
 
-import type { GameInstance, Member, MemberType, SizeCategory, PoolState, StartingFinancials } from '../types/simulation';
+import type { GameInstance, Member, MemberType, SizeCategory, PoolState, StartingFinancials, ReserveCohort } from '../types/simulation';
 import { SeededRandom } from './random';
 import {
   STARTING_FINANCIALS,
@@ -11,6 +11,7 @@ import {
   EXPOSURE_RANGES,
   SIZE_WEIGHTS,
   STARTING_RATE_PER_100,
+  RESERVE_PAYDOWN_PCT,
 } from '../data/defaultAssumptions';
 
 const CITY_PREFIXES = ['Northvale', 'Southgate', 'Eastbrook', 'Westfield', 'Lakewood', 'Riverside', 'Crestview', 'Pinehurst', 'Oakdale', 'Maplewood', 'Elmwood', 'Cedarview', 'Birchwood', 'Willowbrook', 'Stonegate', 'Hillcrest', 'Fairview', 'Clearwater', 'Greenvale', 'Springdale', 'Summerset', 'Winterborn', 'Harborview', 'Cliffside', 'Meadowbrook', 'Ridgeline', 'Timberdale', 'Ironwood', 'Silverbrook', 'Goldenvale'];
@@ -95,6 +96,82 @@ function assignStartingMembers(allMembers: Member[], rng: SeededRandom, targetCo
   }));
 }
 
+// Generate starting reserve cohorts from the beginning gross unpaid reserve
+// These are prior accident-year cohorts that exist before gameplay starts
+function generateStartingReserveCohorts(
+  grossUnpaidReserve: number,
+  reinsuranceRecoverable: number,
+  startingYear: number,
+  rng: SeededRandom
+): ReserveCohort[] {
+  if (grossUnpaidReserve <= 0) return [];
+
+  // Create 3-5 prior accident-year cohorts
+  // More recent cohorts have more unpaid; older cohorts have less
+  const numCohorts = rng.intRange(3, 5);
+  const cohorts: ReserveCohort[] = [];
+
+  // Weight distribution for cohorts (most recent gets most weight)
+  // e.g., for 4 cohorts: [0.35, 0.30, 0.20, 0.15]
+  const weights: number[] = [];
+  let weightSum = 0;
+  for (let i = 0; i < numCohorts; i++) {
+    // Decreasing weight for older cohorts
+    const w = 1 / (i + 1);
+    weights.push(w);
+    weightSum += w;
+  }
+  // Normalize
+  for (let i = 0; i < weights.length; i++) {
+    weights[i] /= weightSum;
+  }
+
+  // Distribute the gross unpaid reserve across cohorts
+  let remainingReserve = grossUnpaidReserve;
+  let remainingReins = reinsuranceRecoverable;
+
+  for (let i = 0; i < numCohorts; i++) {
+    // Last cohort gets the remainder to ensure exact sum
+    const isLast = i === numCohorts - 1;
+    const cohortGrossUnpaid = isLast ? remainingReserve : grossUnpaidReserve * weights[i];
+    const cohortReins = isLast ? remainingReins : reinsuranceRecoverable * weights[i];
+
+    // Calculate how much has been paid on this cohort (older = more paid)
+    // Age determines paydown: cohorts aged 1-5 years
+    const age = i + 1; // 1 = most recent (1 year ago), 5 = oldest (5 years ago)
+    const paidRatio = Math.min(0.80, age * RESERVE_PAYDOWN_PCT);
+    const grossUltimate = cohortGrossUnpaid / (1 - paidRatio);
+    const grossPaid = grossUltimate * paidRatio;
+
+    // Development factor based on age (older cohorts have settled more)
+    const devFactor = 1 + rng.range(-0.03, 0.05) / age;
+
+    // Year number is negative for prior accident years (relative to game start)
+    // yearNumber 0 = accident year before game starts
+    // Calendar year is game starting year minus age
+    const cohortYearNumber = -age;
+    const cohortCalendarYear = startingYear - age;
+
+    cohorts.push({
+      yearNumber: cohortYearNumber,
+      calendarYear: cohortCalendarYear,
+      grossUltimate,
+      grossPaid,
+      grossUnpaid: cohortGrossUnpaid,
+      reinsuranceRecoverable: cohortReins,
+      reinsuranceReceived: cohortReins * paidRatio, // Proportional to paid
+      paydownPct: RESERVE_PAYDOWN_PCT,
+      developmentFactor: devFactor,
+      closed: false,
+    });
+
+    remainingReserve -= cohortGrossUnpaid;
+    remainingReins -= cohortReins;
+  }
+
+  return cohorts;
+}
+
 export function generateGameInstance(instanceId: string, seed: number): GameInstance {
   const rng = new SeededRandom(seed);
   return {
@@ -167,6 +244,21 @@ export function generateStartingPoolState(instance: GameInstance, startingYear: 
 
   const marketShare = activeExposure / Math.max(totalMarketExposure, 0.01);
 
+  // Generate starting reserve cohorts from the beginning gross unpaid reserve
+  // These represent prior accident-year unpaid losses that will roll forward during gameplay
+  const startingReserveCohorts = generateStartingReserveCohorts(
+    grossUnpaidReserve,
+    reinsuranceRecoverable,
+    startingYear,
+    rng
+  );
+
+  // Validate sum
+  const cohortSum = startingReserveCohorts.reduce((s, c) => s + c.grossUnpaid, 0);
+  if (Math.abs(cohortSum - grossUnpaidReserve) > 1) {
+    console.warn(`Starting reserve cohort sum (${cohortSum}) does not match grossUnpaidReserve (${grossUnpaidReserve})`);
+  }
+
   const poolState: PoolState = {
     rateLevel: 100,
     ratePer100,
@@ -175,7 +267,7 @@ export function generateStartingPoolState(instance: GameInstance, startingYear: 
     memberSatisfaction: parseFloat(memberSatisfaction.toFixed(1)),
     averageRiskQuality: parseFloat(riskQuality.toFixed(1)),
     riskControlEffectiveness: 0,
-    reserveCohorts: [],
+    reserveCohorts: startingReserveCohorts,
     members: allMembersWithStatus,
     cash,
     investments,

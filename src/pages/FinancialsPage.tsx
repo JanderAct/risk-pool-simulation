@@ -112,10 +112,12 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <BSLine label="Beginning Net Equity / Surplus" value={formatCurrency(statement.surplusRollforward.beginingSurplus)} />
               <BSLine label="Net Income" value={formatCurrency(statement.surplusRollforward.netIncome)} valueColor={colorForNetIncome(statement.surplusRollforward.netIncome)} />
               <div className="border-t border-gray-200 my-2" />
-              <BSLine label="Ending Net Equity / Surplus" value={formatCurrency(statement.surplusRollforward.endingSurplus)} bold highlight valueColor={statement.surplusRollforward.endingSurplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
+              <BSLine label="= Surplus from Income" value={formatCurrency(statement.surplusRollforward.surplusFromIncome)} />
+              <BSLine label="Ending Net Equity / Surplus (Balance Sheet)" value={formatCurrency(statement.surplusRollforward.endingSurplus)} bold highlight valueColor={statement.surplusRollforward.endingSurplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
+              <BSLine label="Tie-Out Difference" value={formatCurrency(statement.surplusRollforward.tieOutDifference)} valueColor={Math.abs(statement.surplusRollforward.tieOutDifference) < 100 ? 'text-emerald-600' : 'text-amber-600'} />
               <div className="text-xs text-gray-500 mt-2">Change: {formatCurrency(statement.surplusRollforward.change)} ({formatPct(statement.surplusRollforward.changePct)})</div>
-              {Math.abs(statement.surplusRollforward.endingSurplus - (statement.surplusRollforward.beginingSurplus + statement.surplusRollforward.netIncome)) > 0.01 && (
-                <p className="text-xs text-amber-600 mt-1">Note: Surplus rollforward may differ slightly from Beginning + Net Income due to balance sheet reconciliation.</p>
+              {Math.abs(statement.surplusRollforward.tieOutDifference) >= 100 && (
+                <p className="text-xs text-amber-600 mt-1">Note: Tie-out difference may indicate prior-year reserve adjustments or other non-income items.</p>
               )}
             </StatementCard>
 

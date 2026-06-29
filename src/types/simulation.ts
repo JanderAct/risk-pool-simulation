@@ -198,6 +198,9 @@ export interface ResultSet {
   totalLiabilities: number;
   beginingSurplus: number;
   endingSurplus: number;
+  // Surplus rollforward validation
+  surplusFromIncome: number;            // beginingSurplus + netIncome
+  surplusTieOutDifference: number;     // endingSurplus - surplusFromIncome (should be ~0)
 
   // Ratios
   combinedRatio: number;

@@ -115,10 +115,12 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   const investmentReturnRate = invResult.returnRate;
 
   // --- Reserve Development (before funding calculations) ---
+  // Process ALL existing reserve cohorts: starting cohorts + prior year cohorts
+  // Each cohort develops and pays down over time
   const devRng = deriveSubRng(instance.seed, yearNumber, 'dev');
   // Use prior funding adequacy to affect development (underfunded pools see more adverse development)
   const priorFundingAdequacyRatio = priorResult?.fundingAdequacyRatio ?? 1.0;
-  const { developmentImpact, updatedCohorts, grossPaidThisYear } = processReserveDevelopment(
+  const { developmentImpact, updatedCohorts, grossPaidThisYear, reinsReceivedThisYear } = processReserveDevelopment(
     poolState.reserveCohorts,
     devRng,
     priorFundingAdequacyRatio
@@ -145,11 +147,18 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
 
   // --- Expected Unpaid Losses (for balance sheet and funding target) ---
   // This is the BOOKED reserve - expected unpaid losses from all accident years
-  const endingGrossReserve = allCohorts.reduce((s, c) => s + c.grossUnpaid, 0);  // Expected gross unpaid
+  // Starting reserve cohorts + current year cohort all roll forward together
+  const endingGrossReserve = allCohorts.reduce((s, c) => s + c.grossUnpaid, 0);  // Sum of all remaining unpaid
   const endingReinsRecoverable = allCohorts.reduce((s, c) => s + c.reinsuranceRecoverable, 0);  // Reinsurance on unpaid
   const expectedGrossUnpaidLoss = endingGrossReserve;  // Same as endingGrossReserve
   const expectedReinsuranceRecoverable = endingReinsRecoverable;  // Same as endingReinsRecoverable
   const expectedNetUnpaidLoss = Math.max(0, expectedGrossUnpaidLoss - expectedReinsuranceRecoverable);
+
+  // --- Beginning Gross Reserve from prior cohorts (validates starting position) ---
+  // For first year, this comes from starting reserve cohorts in poolState
+  // For subsequent years, this is the prior year's ending reserve
+  const beginningGrossReserve = poolState.reserveCohorts.reduce((s, c) => s + c.grossUnpaid, 0);
+  const beginningReinsRecoverable = poolState.reserveCohorts.reduce((s, c) => s + c.reinsuranceRecoverable, 0);
 
   // --- Income Statement ---
   const assessments = grossPremium * decisions.assessmentPct;
@@ -161,15 +170,18 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   // --- Balance Sheet ---
   // The balance sheet uses EXPECTED unpaid losses as the booked reserve, NOT CLF-loaded
   const beginingSurplus = poolState.surplus;
-  const beginningGrossReserve = poolState.grossUnpaidReserve;
-  const beginningReinsRecoverable = poolState.reinsuranceRecoverable;
 
   const unearnedPremium = grossPremium * 0.25;
   const otherLiabilities = poolState.otherLiabilities;
   const premiumsReceivable = grossPremium * 0.08;
 
   const beginningCash = poolState.cash;
-  const newCash = beginningCash + grossPremium + assessments - grossPaidCurrentYear - grossPaidThisYear + reinsuranceRecovery * 0.40 - operatingExpense - riskControlInvestment - reinsuranceCost - dividends;
+  // Cash flow includes:
+  // - Premium and assessments received
+  // - Loss payments (current year + prior year cohorts)
+  // - Reinsurance received (current year recovery + prior cohort recoveries)
+  // - Operating expenses, risk control, reinsurance cost, dividends
+  const newCash = beginningCash + grossPremium + assessments - grossPaidCurrentYear - grossPaidThisYear + reinsuranceRecovery * 0.40 + reinsReceivedThisYear - operatingExpense - riskControlInvestment - reinsuranceCost - dividends;
   const endingCash = Math.max(0, newCash);
 
   const beginningInvestments = poolState.investments;
@@ -182,6 +194,12 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   // Ending surplus: clean balance sheet identity
   // Surplus = Assets - Liabilities (no CLF adjustment to liabilities)
   const endingSurplus = totalAssets - totalLiabilities;
+
+  // --- Surplus Rollforward Validation ---
+  // In a clean model, Ending Surplus = Beginning Surplus + Net Income
+  // The difference should be zero (or very close due to rounding)
+  const surplusFromIncome = beginingSurplus + netIncome;
+  const surplusTieOutDifference = endingSurplus - surplusFromIncome;
 
   // --- Funding Target & Adequacy (CLF logic) ---
   // The CLF is used to calculate a FUNDING TARGET, not an accounting reserve.
@@ -291,6 +309,9 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
     totalLiabilities,
     beginingSurplus,
     endingSurplus,
+    // Surplus rollforward validation
+    surplusFromIncome,
+    surplusTieOutDifference,
     // Ratios
     combinedRatio,
     lossRatio,
@@ -329,9 +350,10 @@ function processReserveDevelopment(
   cohorts: ReserveCohort[],
   rng: SeededRandom,
   priorFundingAdequacyRatio: number
-): { developmentImpact: number; updatedCohorts: ReserveCohort[]; grossPaidThisYear: number } {
+): { developmentImpact: number; updatedCohorts: ReserveCohort[]; grossPaidThisYear: number; reinsReceivedThisYear: number } {
   let developmentImpact = 0;
   let grossPaidThisYear = 0;
+  let reinsReceivedThisYear = 0;
 
   // Reserve development is affected by prior year funding adequacy.
   // When prior funding adequacy was low (underfunded pool), there's pressure
@@ -362,8 +384,14 @@ function processReserveDevelopment(
     grossPaidThisYear += paydown;
 
     const newUnpaid = devAdjustedUnpaid - paydown;
-    const newReinsRecoverable = newUnpaid * (c.reinsuranceRecoverable / Math.max(c.grossUnpaid, 1));
-    const reinsReceived = paydown * (c.reinsuranceReceived / Math.max(c.grossPaid, 1));
+
+    // Calculate reinsurance received on this paydown
+    // Use the ratio of reinsurance recoverable to gross unpaid for this cohort
+    const reinsRatio = c.reinsuranceRecoverable / Math.max(c.grossUnpaid, 1);
+    const reinsReceived = paydown * reinsRatio;
+    reinsReceivedThisYear += reinsReceived;
+
+    const newReinsRecoverable = newUnpaid * reinsRatio;
 
     developmentImpact += devImpact;
 
@@ -377,5 +405,5 @@ function processReserveDevelopment(
     };
   });
 
-  return { developmentImpact, updatedCohorts, grossPaidThisYear };
+  return { developmentImpact, updatedCohorts, grossPaidThisYear, reinsReceivedThisYear };
 }

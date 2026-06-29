@@ -116,10 +116,17 @@ export default function ResultsPage({ lockedResults }: ResultsPageProps) {
               <Row label="Beginning Surplus" value={formatCurrency(result.beginingSurplus)} />
               <Row label="Net Income" value={formatCurrency(result.netIncome)} valueColor={colorForNetIncome(result.netIncome)} />
               <div className="border-t border-gray-100 my-1" />
-              <Row label="Ending Surplus / Net Equity" value={formatCurrency(result.endingSurplus)} valueColor={colorForSurplus(result.endingSurplus)} bold />
+              <Row label="= Surplus from Income" value={formatCurrency(result.surplusFromIncome)} />
+              <Row label="Ending Surplus (Balance Sheet)" value={formatCurrency(result.endingSurplus)} valueColor={colorForSurplus(result.endingSurplus)} bold />
+              <Row label="Tie-Out Difference" value={formatCurrency(result.surplusTieOutDifference)} valueColor={Math.abs(result.surplusTieOutDifference) < 100 ? 'text-emerald-600' : 'text-amber-600'} />
               <p className="text-xs text-gray-400 mt-2">
                 Balance check: {formatCurrency(result.totalAssets)} (Assets) - {formatCurrency(result.totalLiabilities)} (Liabilities) = {formatCurrency(result.endingSurplus)}
               </p>
+              {Math.abs(result.surplusTieOutDifference) >= 100 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Note: Tie-out difference may indicate prior-year reserve adjustments or other non-income items.
+                </p>
+              )}
             </ResultCard>
 
             {/* Funding Target & Adequacy */}

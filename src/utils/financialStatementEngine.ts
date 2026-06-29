@@ -37,6 +37,8 @@ export interface SurplusRollforward {
   endingSurplus: number;
   change: number;
   changePct: number;
+  surplusFromIncome: number;         // Computed: beginingSurplus + netIncome
+  tieOutDifference: number;          // endingSurplus - surplusFromIncome (should be ~0)
 }
 
 export interface ReinsuranceDetail {
@@ -148,6 +150,8 @@ export function deriveAnnualStatement(result: ResultSet): AnnualFinancialStateme
     endingSurplus: result.endingSurplus,
     change: result.endingSurplus - result.beginingSurplus,
     changePct: (result.endingSurplus - result.beginingSurplus) / Math.max(Math.abs(result.beginingSurplus), 1),
+    surplusFromIncome: result.surplusFromIncome,
+    tieOutDifference: result.surplusTieOutDifference,
   };
 
   const reinsLabels = ['None', 'Low', 'Moderate', 'High', 'Full Transfer'];
