@@ -114,16 +114,17 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   const investmentIncome = invResult.income;
   const investmentReturnRate = invResult.returnRate;
 
-  const fundingCLF = lookupCLF(decisions.fundingConfidenceLevel);
-  const expectedFutureLoss = grossUltimateLoss * 0.60;
-  const carriedLiabilities = expectedFutureLoss * fundingCLF;
-
-  const fundingRatio = carriedLiabilities / Math.max(expectedFutureLoss, 1);
-  const fundingAdequacyIndicator = fundingRatio >= 1.3 ? 'Adequate' : fundingRatio >= 1.0 ? 'Marginal' : 'Deficient';
-
+  // --- Reserve Development (before funding calculations) ---
   const devRng = deriveSubRng(instance.seed, yearNumber, 'dev');
-  const { developmentImpact, updatedCohorts, grossPaidThisYear } = processReserveDevelopment(poolState.reserveCohorts, devRng);
+  // Use prior funding adequacy to affect development (underfunded pools see more adverse development)
+  const priorFundingAdequacyRatio = priorResult?.fundingAdequacyRatio ?? 1.0;
+  const { developmentImpact, updatedCohorts, grossPaidThisYear } = processReserveDevelopment(
+    poolState.reserveCohorts,
+    devRng,
+    priorFundingAdequacyRatio
+  );
 
+  // Current year reserve: 60% of ultimate is unpaid (IBNR + case), 40% is paid
   const currentYearGrossReserve = grossUltimateLoss * 0.60;
   const grossPaidCurrentYear = grossUltimateLoss * 0.40;
 
@@ -142,17 +143,26 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
 
   const allCohorts = [...updatedCohorts, currentYearCohort];
 
+  // --- Expected Unpaid Losses (for balance sheet and funding target) ---
+  // This is the BOOKED reserve - expected unpaid losses from all accident years
+  const endingGrossReserve = allCohorts.reduce((s, c) => s + c.grossUnpaid, 0);  // Expected gross unpaid
+  const endingReinsRecoverable = allCohorts.reduce((s, c) => s + c.reinsuranceRecoverable, 0);  // Reinsurance on unpaid
+  const expectedGrossUnpaidLoss = endingGrossReserve;  // Same as endingGrossReserve
+  const expectedReinsuranceRecoverable = endingReinsRecoverable;  // Same as endingReinsRecoverable
+  const expectedNetUnpaidLoss = Math.max(0, expectedGrossUnpaidLoss - expectedReinsuranceRecoverable);
+
+  // --- Income Statement ---
   const assessments = grossPremium * decisions.assessmentPct;
   const dividends = grossPremium * decisions.dividendPct;
   const priorYearDevelopment = developmentImpact;
 
   const netIncome = grossPremium + assessments + investmentIncome - netUltimateLoss - operatingExpense - riskControlInvestment - reinsuranceCost - dividends + priorYearDevelopment;
 
+  // --- Balance Sheet ---
+  // The balance sheet uses EXPECTED unpaid losses as the booked reserve, NOT CLF-loaded
   const beginingSurplus = poolState.surplus;
   const beginningGrossReserve = poolState.grossUnpaidReserve;
-  const endingGrossReserve = allCohorts.reduce((s, c) => s + c.grossUnpaid, 0);
   const beginningReinsRecoverable = poolState.reinsuranceRecoverable;
-  const endingReinsRecoverable = allCohorts.reduce((s, c) => s + c.reinsuranceRecoverable, 0);
 
   const unearnedPremium = grossPremium * 0.25;
   const otherLiabilities = poolState.otherLiabilities;
@@ -166,9 +176,48 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   const endingInvestments = Math.max(0, beginningInvestments + investmentIncome - Math.max(0, -netIncome) * 0.5);
 
   const totalAssets = endingCash + endingInvestments + premiumsReceivable + endingReinsRecoverable + poolState.otherAssets;
-  const totalLiabilities = endingGrossReserve + unearnedPremium + otherLiabilities;
-  const impliedSurplus = totalAssets - totalLiabilities;
+  // Liabilities use expected unpaid losses, NOT CLF-loaded funding target
+  const totalLiabilities = expectedGrossUnpaidLoss + unearnedPremium + otherLiabilities;
 
+  // Ending surplus: clean balance sheet identity
+  // Surplus = Assets - Liabilities (no CLF adjustment to liabilities)
+  const endingSurplus = totalAssets - totalLiabilities;
+
+  // --- Funding Target & Adequacy (CLF logic) ---
+  // The CLF is used to calculate a FUNDING TARGET, not an accounting reserve.
+  // The player chooses "what confidence level do we want to fund at?"
+  const selectedFundingConfidenceLevel = decisions.fundingConfidenceLevel;
+  const selectedFundingCLF = lookupCLF(selectedFundingConfidenceLevel);
+
+  // Funding target = expected unpaid losses × CLF
+  const grossFundingTarget = expectedGrossUnpaidLoss * selectedFundingCLF;
+  const netFundingTarget = expectedNetUnpaidLoss * selectedFundingCLF;
+
+  // Funding margin needed = how much MORE funding is needed beyond expected unpaid
+  const fundingMarginNeeded = netFundingTarget - expectedNetUnpaidLoss;
+
+  // Available funding = ending surplus (capital available to cover funding target)
+  const availableFunding = endingSurplus;
+
+  // Funding gap = available funding - funding target
+  // Positive = surplus above target, Negative = gap below target
+  const fundingGap = availableFunding - netFundingTarget;
+
+  // Funding adequacy ratio = available funding / funding target
+  const fundingAdequacyRatio = availableFunding / Math.max(netFundingTarget, 1);
+
+  // Funding adequacy status based on ratio
+  const fundingAdequacyStatus =
+    fundingAdequacyRatio >= 1.25 ? 'Strong' :
+    fundingAdequacyRatio >= 1.00 ? 'Adequate' :
+    fundingAdequacyRatio >= 0.90 ? 'Thin' :
+    'Deficient';
+
+  // Legacy compatibility fields
+  const fundingCLF = selectedFundingCLF;
+  const fundingAdequacyIndicator = fundingAdequacyStatus;
+
+  // --- Ratios ---
   const combinedRatio = (netUltimateLoss + operatingExpense + riskControlInvestment + reinsuranceCost) / Math.max(grossPremium, 1);
   const lossRatio = netUltimateLoss / Math.max(grossPremium, 1);
   const expenseRatio = (operatingExpense + riskControlInvestment + reinsuranceCost) / Math.max(grossPremium, 1);
@@ -212,9 +261,23 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
     investmentReturnRate,
     investedAssets,
     investmentIncome,
+    // Funding Target & Adequacy fields
+    selectedFundingConfidenceLevel,
+    selectedFundingCLF,
+    expectedGrossUnpaidLoss,
+    expectedReinsuranceRecoverable,
+    expectedNetUnpaidLoss,
+    grossFundingTarget,
+    netFundingTarget,
+    fundingMarginNeeded,
+    availableFunding,
+    fundingGap,
+    fundingAdequacyRatio,
+    fundingAdequacyStatus,
+    // Legacy fields
     fundingCLF,
-    carriedLiabilities,
     fundingAdequacyIndicator,
+    // Income & Balance Sheet
     netIncome,
     beginningCash,
     endingCash,
@@ -227,7 +290,8 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
     otherLiabilities,
     totalLiabilities,
     beginingSurplus,
-    endingSurplus: impliedSurplus,
+    endingSurplus,
+    // Ratios
     combinedRatio,
     lossRatio,
     expenseRatio,
@@ -253,7 +317,7 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
     reinsuranceRecoverable: endingReinsRecoverable,
     unearnedPremium,
     otherLiabilities,
-    surplus: impliedSurplus,
+    surplus: endingSurplus,
     totalMarketExposure,
     allMarketMembers: updatedAllMembers,
   };
@@ -261,12 +325,36 @@ export function processYear(gameState: GameState, decisions: DecisionSet): { upd
   return { updatedPoolState, result };
 }
 
-function processReserveDevelopment(cohorts: ReserveCohort[], rng: SeededRandom): { developmentImpact: number; updatedCohorts: ReserveCohort[]; grossPaidThisYear: number } {
+function processReserveDevelopment(
+  cohorts: ReserveCohort[],
+  rng: SeededRandom,
+  priorFundingAdequacyRatio: number
+): { developmentImpact: number; updatedCohorts: ReserveCohort[]; grossPaidThisYear: number } {
   let developmentImpact = 0;
   let grossPaidThisYear = 0;
 
+  // Reserve development is affected by prior year funding adequacy.
+  // When prior funding adequacy was low (underfunded pool), there's pressure
+  // toward adverse development as claims may develop worse than expected.
+  // When prior funding adequacy was high (well-funded pool), development
+  // is more likely to be favorable or neutral.
+  //
+  // Effect: Each 0.10 below 1.0 funding adequacy shifts development 1% toward adverse.
+  // Each 0.10 above 1.0 shifts development 0.5% toward favorable (more conservative).
+  const fundingImpactOnDevelopment = (priorFundingAdequacyRatio - 1.0) * 0.05;
+
   const updatedCohorts = cohorts.filter(c => !c.closed).map(c => {
-    const devFactor = rng.range(0.92, 1.10);
+    // Base development factor range: 0.92 to 1.10
+    // Factor < 1.0 = favorable (reserve released)
+    // Factor > 1.0 = adverse (reserve strengthened)
+    let devMin = 0.92 - fundingImpactOnDevelopment;
+    let devMax = 1.10 - fundingImpactOnDevelopment;
+
+    // Clamp to reasonable range
+    devMin = Math.max(0.85, Math.min(1.05, devMin));
+    devMax = Math.max(0.95, Math.min(1.20, devMax));
+
+    const devFactor = rng.range(devMin, devMax);
     const devAdjustedUnpaid = c.grossUnpaid * devFactor;
     const devImpact = c.grossUnpaid - devAdjustedUnpaid;
 

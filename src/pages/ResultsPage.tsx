@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClipboardList, Zap, TrendingUp, Shield, DollarSign, AlertTriangle } from 'lucide-react';
+import { ClipboardList, Zap, TrendingUp, Shield, DollarSign, AlertTriangle, Target } from 'lucide-react';
 import type { ResultSet } from '../types/simulation';
 import { formatCurrency, formatPct, colorForRatio, colorForNetIncome, colorForSurplus } from '../utils/formatters';
 import { REINSURANCE_PROGRAMS } from '../data/defaultAssumptions';
@@ -87,17 +87,16 @@ export default function ResultsPage({ lockedResults }: ResultsPageProps) {
               <Row label="Net Ultimate Loss + LAE" value={formatCurrency(result.netUltimateLoss)} valueColor="text-red-600" />
             </ResultCard>
 
-            <ResultCard title="Expenses & Reinsurance" icon={<Shield size={16} />}>
+            <ResultCard title="Reserves & Development" icon={<Shield size={16} />}>
               <Row label="Operating Expense" value={formatCurrency(result.operatingExpense)} valueColor="text-red-600" />
               <Row label="Risk Control Investment" value={formatCurrency(result.riskControlInvestment)} valueColor="text-amber-600" />
               <Row label="Reinsurance Cost" value={formatCurrency(result.reinsuranceCost)} valueColor="text-red-600" />
               <div className="border-t border-gray-100 my-1" />
               <Row label="Prior-Year Development" value={formatCurrency(result.priorYearDevelopment)} valueColor={result.priorYearDevelopment >= 0 ? 'text-emerald-600' : 'text-red-600'} />
               <Row label="Beginning Gross Reserve" value={formatCurrency(result.beginningGrossReserve)} />
-              <Row label="Ending Gross Reserve" value={formatCurrency(result.endingGrossReserve)} />
+              <Row label="Ending Gross Reserve (Expected Unpaid)" value={formatCurrency(result.endingGrossReserve)} />
               <Row label="Ending Reins. Recoverable" value={formatCurrency(result.endingReinsRecoverable)} />
-              <Row label="Carried Liabilities" value={formatCurrency(result.carriedLiabilities)} />
-              <Row label="Funding Adequacy" value={result.fundingAdequacyIndicator} valueColor={result.fundingAdequacyIndicator === 'Adequate' ? 'text-emerald-600' : result.fundingAdequacyIndicator === 'Marginal' ? 'text-amber-600' : 'text-red-600'} />
+              <Row label="Net Unpaid Reserve" value={formatCurrency(result.expectedNetUnpaidLoss)} />
             </ResultCard>
 
             <ResultCard title="Investment & Income" icon={<Zap size={16} />}>
@@ -110,8 +109,40 @@ export default function ResultsPage({ lockedResults }: ResultsPageProps) {
               <Row label="Expense Ratio" value={formatPct(result.expenseRatio)} />
               <div className="border-t border-gray-100 my-1" />
               <Row label="Net Income" value={formatCurrency(result.netIncome)} valueColor={colorForNetIncome(result.netIncome)} />
+            </ResultCard>
+
+            {/* Net Equity / Surplus Rollforward */}
+            <ResultCard title="Net Equity / Surplus Rollforward" icon={<DollarSign size={16} />}>
               <Row label="Beginning Surplus" value={formatCurrency(result.beginingSurplus)} />
-              <Row label="Ending Surplus / Net Equity" value={formatCurrency(result.endingSurplus)} valueColor={colorForSurplus(result.endingSurplus)} />
+              <Row label="Net Income" value={formatCurrency(result.netIncome)} valueColor={colorForNetIncome(result.netIncome)} />
+              <div className="border-t border-gray-100 my-1" />
+              <Row label="Ending Surplus / Net Equity" value={formatCurrency(result.endingSurplus)} valueColor={colorForSurplus(result.endingSurplus)} bold />
+              <p className="text-xs text-gray-400 mt-2">
+                Balance check: {formatCurrency(result.totalAssets)} (Assets) - {formatCurrency(result.totalLiabilities)} (Liabilities) = {formatCurrency(result.endingSurplus)}
+              </p>
+            </ResultCard>
+
+            {/* Funding Target & Adequacy */}
+            <ResultCard title="Funding Target & Adequacy" icon={<Target size={16} />}>
+              <Row label="Expected Net Unpaid Loss" value={formatCurrency(result.expectedNetUnpaidLoss)} />
+              <Row label="Selected Funding Confidence" value={formatPct(result.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
+              <Row label="CLF Applied" value={result.selectedFundingCLF.toFixed(3)} />
+              <div className="border-t border-gray-100 my-1" />
+              <Row label="Net Funding Target" value={formatCurrency(result.netFundingTarget)} valueColor="text-amber-600" />
+              <Row label="Funding Margin Needed" value={formatCurrency(result.fundingMarginNeeded)} valueColor={result.fundingMarginNeeded > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+              <div className="border-t border-gray-100 my-1" />
+              <Row label="Available Funding (Surplus)" value={formatCurrency(result.availableFunding)} />
+              <Row label="Funding Gap / Surplus" value={formatCurrency(result.fundingGap)} valueColor={result.fundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <Row label="Funding Adequacy Ratio" value={result.fundingAdequacyRatio.toFixed(2)} />
+              <Row label="Funding Adequacy Status" value={result.fundingAdequacyStatus} valueColor={
+                result.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
+                result.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
+                result.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
+                'text-red-600'
+              } />
+              <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                Funding confidence level is used to evaluate funding adequacy, not to book the accounting reserve. Higher confidence requires more capital cushion.
+              </p>
             </ResultCard>
 
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -142,11 +173,11 @@ function ResultCard({ title, icon, children }: { title: string; icon: React.Reac
   );
 }
 
-function Row({ label, value, valueColor = 'text-gray-800' }: { label: string; value: string; valueColor?: string }) {
+function Row({ label, value, valueColor = 'text-gray-800', bold = false }: { label: string; value: string; valueColor?: string; bold?: boolean }) {
   return (
     <div className="flex justify-between items-baseline gap-2">
       <span className="text-sm text-gray-500">{label}</span>
-      <span className={`text-sm font-semibold font-mono ${valueColor} text-right`}>{value}</span>
+      <span className={`text-sm font-semibold font-mono ${valueColor} text-right ${bold ? 'font-bold' : ''}`}>{value}</span>
     </div>
   );
 }

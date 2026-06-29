@@ -77,8 +77,23 @@ export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): 
   }
 
   // --- Funding ---
-  if (fundingAdequacyIndicator === 'Deficient') {
-    parts.push(`The pool's funding position is rated Deficient.`);
+  if (fundingAdequacyIndicator === 'Deficient' || fundingAdequacyIndicator === 'Strong' || fundingAdequacyIndicator === 'Adequate' || fundingAdequacyIndicator === 'Thin') {
+    if (result.fundingAdequacyStatus === 'Deficient') {
+      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, indicating insufficient capital relative to the funding target.`);
+    } else if (result.fundingAdequacyStatus === 'Thin') {
+      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, with modest capital cushion above the funding target.`);
+    } else {
+      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, with adequate capital cushion above the funding target.`);
+    }
+  }
+
+  // --- Prior Year Development ---
+  if (Math.abs(priorYearDevelopment) > 10000) {
+    if (priorYearDevelopment > 0) {
+      parts.push(`Prior year reserves developed favorably, releasing $${fmt(priorYearDevelopment)} to income.`);
+    } else {
+      parts.push(`Prior year reserves developed adversely, requiring $${fmt(Math.abs(priorYearDevelopment))} of strengthening.`);
+    }
   }
 
   // --- Net outcome ---

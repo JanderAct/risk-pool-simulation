@@ -65,6 +65,23 @@ export interface ReserveDetail {
   netUnpaidReserve: number;
 }
 
+// Funding Target & Adequacy detail
+// The CLF is used to calculate a funding target, NOT an accounting reserve.
+export interface FundingDetail {
+  selectedFundingConfidenceLevel: number;  // Player-facing selection (e.g., 75%)
+  selectedFundingCLF: number;              // Backend actuarial factor
+  expectedGrossUnpaidLoss: number;         // Expected unpaid losses (gross)
+  expectedReinsuranceRecoverable: number;  // Reinsurance on unpaid losses
+  expectedNetUnpaidLoss: number;           // Net of reinsurance
+  grossFundingTarget: number;             // expectedGross × CLF
+  netFundingTarget: number;               // expectedNet × CLF
+  fundingMarginNeeded: number;            // netFundingTarget - expectedNetUnpaid
+  availableFunding: number;               // endingSurplus (capital available)
+  fundingGap: number;                    // availableFunding - netFundingTarget
+  fundingAdequacyRatio: number;          // available / target
+  fundingAdequacyStatus: string;         // "Strong" | "Adequate" | "Thin" | "Deficient"
+}
+
 export interface KeyRatios {
   lossRatio: number;
   netLossRatio: number;
@@ -76,6 +93,8 @@ export interface KeyRatios {
   marketShare: number;
   memberRetentionRate: number;
   fundingAdequacyIndicator: string;
+  fundingAdequacyStatus: string;
+  fundingAdequacyRatio: number;
   ratePer100: number;
   purePremiumPer100: number;
   activeExposure: number;
@@ -89,6 +108,7 @@ export interface AnnualFinancialStatement {
   surplusRollforward: SurplusRollforward;
   reinsuranceDetail: ReinsuranceDetail;
   reserveDetail: ReserveDetail;
+  fundingDetail: FundingDetail;
   keyRatios: KeyRatios;
 }
 
@@ -159,6 +179,22 @@ export function deriveAnnualStatement(result: ResultSet): AnnualFinancialStateme
     netUnpaidReserve: result.endingGrossReserve - result.endingReinsRecoverable,
   };
 
+  // Funding detail - CLF is used for funding target, NOT accounting reserve
+  const fundingDetail: FundingDetail = {
+    selectedFundingConfidenceLevel: result.selectedFundingConfidenceLevel,
+    selectedFundingCLF: result.selectedFundingCLF,
+    expectedGrossUnpaidLoss: result.expectedGrossUnpaidLoss,
+    expectedReinsuranceRecoverable: result.expectedReinsuranceRecoverable,
+    expectedNetUnpaidLoss: result.expectedNetUnpaidLoss,
+    grossFundingTarget: result.grossFundingTarget,
+    netFundingTarget: result.netFundingTarget,
+    fundingMarginNeeded: result.fundingMarginNeeded,
+    availableFunding: result.availableFunding,
+    fundingGap: result.fundingGap,
+    fundingAdequacyRatio: result.fundingAdequacyRatio,
+    fundingAdequacyStatus: result.fundingAdequacyStatus,
+  };
+
   const keyRatios: KeyRatios = {
     lossRatio: result.grossUltimateLoss / Math.max(result.grossPremium, 1),
     netLossRatio: result.lossRatio,
@@ -170,12 +206,24 @@ export function deriveAnnualStatement(result: ResultSet): AnnualFinancialStateme
     marketShare: result.marketShare,
     memberRetentionRate: result.memberRetentionRate,
     fundingAdequacyIndicator: result.fundingAdequacyIndicator,
+    fundingAdequacyStatus: result.fundingAdequacyStatus,
+    fundingAdequacyRatio: result.fundingAdequacyRatio,
     ratePer100: result.ratePer100,
     purePremiumPer100: result.purePremiumPer100,
     activeExposure: result.activeExposure,
   };
 
-  return { yearNumber: result.yearNumber, calendarYear: result.calendarYear, incomeStatement, balanceSheet, surplusRollforward, reinsuranceDetail, reserveDetail, keyRatios };
+  return {
+    yearNumber: result.yearNumber,
+    calendarYear: result.calendarYear,
+    incomeStatement,
+    balanceSheet,
+    surplusRollforward,
+    reinsuranceDetail,
+    reserveDetail,
+    fundingDetail,
+    keyRatios,
+  };
 }
 
 export function deriveStartingStatement(sf: StartingFinancials): BalanceSheet & { operatingMetrics: { activeMembers: number; activeExposure: number; totalMarketExposure: number; marketShare: number; rateLevel: number; ratePer100: number; purePremiumPer100: number; purePremium: number; memberSatisfaction: number; riskQuality: number; surplusToPremiumRatio: number; annualPremium: number; expectedLossRatio: number } } {

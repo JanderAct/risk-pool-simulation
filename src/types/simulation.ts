@@ -161,10 +161,26 @@ export interface ResultSet {
   investedAssets: number;
   investmentIncome: number;
 
-  // Funding
-  fundingCLF: number;
-  carriedLiabilities: number;
-  fundingAdequacyIndicator: string; // "Adequate" | "Marginal" | "Deficient"
+  // Funding Target & Adequacy
+  // The CLF represents a funding target, NOT an accounting reserve.
+  // The player chooses "what confidence level do we want to fund at?"
+  // The selected CLF is applied to expected unpaid losses to derive a funding target.
+  // Funding adequacy compares available capital to that target.
+  selectedFundingConfidenceLevel: number;  // Player-facing selection (0.50 to 0.95)
+  selectedFundingCLF: number;              // Backend actuarial factor from CLF table
+  expectedGrossUnpaidLoss: number;         // Expected unpaid losses from all cohorts (gross)
+  expectedReinsuranceRecoverable: number;  // Reinsurance recoverable on unpaid losses
+  expectedNetUnpaidLoss: number;           // Expected unpaid losses net of reinsurance
+  grossFundingTarget: number;             // expectedGrossUnpaidLoss × selectedFundingCLF
+  netFundingTarget: number;               // expectedNetUnpaidLoss × selectedFundingCLF
+  fundingMarginNeeded: number;            // netFundingTarget - expectedNetUnpaidLoss (positive = need more funding)
+  availableFunding: number;               // endingSurplus = capital available to cover funding target
+  fundingGap: number;                    // availableFunding - netFundingTarget (positive = surplus, negative = gap)
+  fundingAdequacyRatio: number;          // availableFunding / netFundingTarget
+  fundingAdequacyStatus: string;          // "Strong" | "Adequate" | "Thin" | "Deficient"
+  // Legacy compatibility
+  fundingCLF: number;                    // Alias for selectedFundingCLF
+  fundingAdequacyIndicator: string;      // Alias for fundingAdequacyStatus
 
   // Income statement
   netIncome: number;

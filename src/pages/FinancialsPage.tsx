@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Target } from 'lucide-react';
 import type { ResultSet, StartingFinancials } from '../types/simulation';
 import { deriveAnnualStatement, deriveStartingStatement } from '../utils/financialStatementEngine';
 import { formatCurrency, formatPct, colorForRatio, colorForNetIncome } from '../utils/formatters';
@@ -106,6 +106,7 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <div className="border-t border-gray-200 my-2" />
               <BSLine label="Net Equity / Surplus" value={formatCurrency(statement.balanceSheet.surplus)} bold highlight valueColor={statement.balanceSheet.surplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
               <p className="text-xs text-gray-400 mt-2">Balance check: Assets ({formatCurrency(statement.balanceSheet.totalAssets)}) − Liabilities ({formatCurrency(statement.balanceSheet.totalLiabilities)}) = {formatCurrency(statement.balanceSheet.surplus)}</p>
+              <p className="text-xs text-gray-500 mt-1 italic">Gross Unpaid Reserve represents expected unpaid losses, not a CLF-loaded funding target.</p>
             </StatementCard>
             <StatementCard title="Net Equity / Surplus Rollforward">
               <BSLine label="Beginning Net Equity / Surplus" value={formatCurrency(statement.surplusRollforward.beginingSurplus)} />
@@ -113,7 +114,34 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <div className="border-t border-gray-200 my-2" />
               <BSLine label="Ending Net Equity / Surplus" value={formatCurrency(statement.surplusRollforward.endingSurplus)} bold highlight valueColor={statement.surplusRollforward.endingSurplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
               <div className="text-xs text-gray-500 mt-2">Change: {formatCurrency(statement.surplusRollforward.change)} ({formatPct(statement.surplusRollforward.changePct)})</div>
+              {Math.abs(statement.surplusRollforward.endingSurplus - (statement.surplusRollforward.beginingSurplus + statement.surplusRollforward.netIncome)) > 0.01 && (
+                <p className="text-xs text-amber-600 mt-1">Note: Surplus rollforward may differ slightly from Beginning + Net Income due to balance sheet reconciliation.</p>
+              )}
             </StatementCard>
+
+            {/* Funding Target & Adequacy */}
+            <StatementCard title="Funding Target & Adequacy" icon={<Target size={16} className="text-blue-600" />}>
+              <MetricRow label="Expected Net Unpaid Loss" value={formatCurrency(statement.fundingDetail.expectedNetUnpaidLoss)} />
+              <MetricRow label="Selected Funding Confidence" value={formatPct(statement.fundingDetail.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
+              <MetricRow label="CLF Applied" value={statement.fundingDetail.selectedFundingCLF.toFixed(3)} />
+              <div className="border-t border-gray-100 my-2" />
+              <MetricRow label="Net Funding Target" value={formatCurrency(statement.fundingDetail.netFundingTarget)} valueColor="text-amber-600" />
+              <MetricRow label="Funding Margin Needed" value={formatCurrency(statement.fundingDetail.fundingMarginNeeded)} valueColor={statement.fundingDetail.fundingMarginNeeded > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+              <div className="border-t border-gray-100 my-2" />
+              <MetricRow label="Available Funding (Surplus)" value={formatCurrency(statement.fundingDetail.availableFunding)} />
+              <MetricRow label="Funding Gap / Surplus" value={formatCurrency(statement.fundingDetail.fundingGap)} valueColor={statement.fundingDetail.fundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <MetricRow label="Funding Adequacy Ratio" value={statement.fundingDetail.fundingAdequacyRatio.toFixed(2)} />
+              <MetricRow label="Funding Adequacy Status" value={statement.fundingDetail.fundingAdequacyStatus} valueColor={
+                statement.fundingDetail.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
+                statement.fundingDetail.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
+                statement.fundingDetail.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
+                'text-red-600'
+              } />
+              <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+                Funding confidence level is used to evaluate funding adequacy, not to book the accounting reserve. Higher confidence requires more capital cushion.
+              </p>
+            </StatementCard>
+
             <StatementCard title="Reinsurance Detail">
               <MetricRow label="Protection Level" value={`${statement.reinsuranceDetail.level} — ${statement.reinsuranceDetail.levelLabel}`} />
               <MetricRow label="Reinsurance Cost" value={formatCurrency(statement.reinsuranceDetail.reinsuranceCost)} />
@@ -138,7 +166,12 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <MetricRow label="Surplus to Premium Ratio" value={formatPct(statement.keyRatios.surplusToPremiumRatio)} />
               <MetricRow label="Market Share" value={formatPct(statement.keyRatios.marketShare)} />
               <MetricRow label="Member Retention Rate" value={formatPct(statement.keyRatios.memberRetentionRate)} />
-              <MetricRow label="Funding Adequacy" value={statement.keyRatios.fundingAdequacyIndicator} valueColor={statement.keyRatios.fundingAdequacyIndicator === 'Adequate' ? 'text-emerald-600' : statement.keyRatios.fundingAdequacyIndicator === 'Marginal' ? 'text-amber-600' : 'text-red-600'} />
+              <MetricRow label="Funding Adequacy" value={statement.keyRatios.fundingAdequacyStatus} valueColor={
+                statement.keyRatios.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
+                statement.keyRatios.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
+                statement.keyRatios.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
+                'text-red-600'
+              } />
             </StatementCard>
           </div>
         </div>
@@ -168,10 +201,11 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   );
 }
 
-function StatementCard({ title, children }: { title: string; children: React.ReactNode }) {
+function StatementCard({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-3.5 bg-gray-50/60 border-b border-gray-200">
+      <div className="px-5 py-3.5 bg-gray-50/60 border-b border-gray-200 flex items-center gap-2">
+        {icon}
         <h4 className="font-bold text-gray-800 text-sm">{title}</h4>
       </div>
       <div className="p-5 space-y-1.5">{children}</div>
