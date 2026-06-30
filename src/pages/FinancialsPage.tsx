@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Target } from 'lucide-react';
+import { FileText, Target, BarChart3 } from 'lucide-react';
 import type { ResultSet, StartingFinancials } from '../types/simulation';
 import { deriveAnnualStatement, deriveStartingStatement } from '../utils/financialStatementEngine';
 import { formatCurrency, formatPct, colorForRatio, colorForNetIncome } from '../utils/formatters';
@@ -91,6 +91,7 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <div className="border-t border-gray-200 my-2" />
               <ISLine label="Net Income" value={formatCurrency(statement.incomeStatement.netIncome)} bold valueColor={colorForNetIncome(statement.incomeStatement.netIncome)} />
             </StatementCard>
+
             <StatementCard title="Ending Balance Sheet">
               <BSLine label="Cash & Cash Equivalents" value={formatCurrency(statement.balanceSheet.cash)} />
               <BSLine label="Investments" value={formatCurrency(statement.balanceSheet.investments)} />
@@ -106,8 +107,9 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <div className="border-t border-gray-200 my-2" />
               <BSLine label="Net Equity / Surplus" value={formatCurrency(statement.balanceSheet.surplus)} bold highlight valueColor={statement.balanceSheet.surplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
               <p className="text-xs text-gray-400 mt-2">Balance check: Assets ({formatCurrency(statement.balanceSheet.totalAssets)}) − Liabilities ({formatCurrency(statement.balanceSheet.totalLiabilities)}) = {formatCurrency(statement.balanceSheet.surplus)}</p>
-              <p className="text-xs text-gray-500 mt-1 italic">Gross Unpaid Reserve represents expected unpaid losses, not a CLF-loaded funding target.</p>
+              <p className="text-xs text-gray-500 mt-1 italic">Gross Unpaid Reserve = expected unpaid losses. The CLF does not load the accounting reserve.</p>
             </StatementCard>
+
             <StatementCard title="Net Equity / Surplus Rollforward">
               <BSLine label="Beginning Net Equity / Surplus" value={formatCurrency(statement.surplusRollforward.beginingSurplus)} />
               <BSLine label="Net Income" value={formatCurrency(statement.surplusRollforward.netIncome)} valueColor={colorForNetIncome(statement.surplusRollforward.netIncome)} />
@@ -116,32 +118,51 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <BSLine label="Ending Net Equity / Surplus (Balance Sheet)" value={formatCurrency(statement.surplusRollforward.endingSurplus)} bold highlight valueColor={statement.surplusRollforward.endingSurplus >= 0 ? 'text-emerald-700' : 'text-red-700'} />
               <BSLine label="Tie-Out Difference" value={formatCurrency(statement.surplusRollforward.tieOutDifference)} valueColor={Math.abs(statement.surplusRollforward.tieOutDifference) < 100 ? 'text-emerald-600' : 'text-amber-600'} />
               <div className="text-xs text-gray-500 mt-2">Change: {formatCurrency(statement.surplusRollforward.change)} ({formatPct(statement.surplusRollforward.changePct)})</div>
-              {Math.abs(statement.surplusRollforward.tieOutDifference) >= 100 && (
-                <p className="text-xs text-amber-600 mt-1">Note: Tie-out difference may indicate prior-year reserve adjustments or other non-income items.</p>
-              )}
             </StatementCard>
 
-            {/* Funding Target & Adequacy */}
-            <StatementCard title="Funding Target & Adequacy" icon={<Target size={16} className="text-blue-600" />}>
-              <MetricRow label="Expected Net Unpaid Loss" value={formatCurrency(statement.fundingDetail.expectedNetUnpaidLoss)} />
-              <MetricRow label="Selected Funding Confidence" value={formatPct(statement.fundingDetail.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
-              <MetricRow label="CLF Applied" value={statement.fundingDetail.selectedFundingCLF.toFixed(3)} />
+            {/* Rate / Premium Funding Adequacy */}
+            <StatementCard title="Rate / Premium Funding Adequacy" icon={<Target size={16} className="text-blue-600" />}>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Funding confidence level is used to calculate the required funding premium and indicated funding rate. It is <strong>not</strong> used to book the accounting reserve.
+                </p>
+              </div>
+              <MetricRow label="Selected Funding Confidence Level" value={formatPct(statement.premiumFundingDetail.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
+              <MetricRow label="CLF Applied" value={statement.premiumFundingDetail.selectedFundingCLF.toFixed(3)} />
               <div className="border-t border-gray-100 my-2" />
-              <MetricRow label="Net Funding Target" value={formatCurrency(statement.fundingDetail.netFundingTarget)} valueColor="text-amber-600" />
-              <MetricRow label="Funding Margin Needed" value={formatCurrency(statement.fundingDetail.fundingMarginNeeded)} valueColor={statement.fundingDetail.fundingMarginNeeded > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+              <MetricRow label="Expected Loss (Pre-CLF)" value={formatCurrency(statement.premiumFundingDetail.expectedLoss)} />
+              <MetricRow label="CLF-Adjusted Expected Loss" value={formatCurrency(statement.premiumFundingDetail.clfAdjustedExpectedLoss)} valueColor="text-amber-600" />
+              <MetricRow label="Operating Expense" value={formatCurrency(statement.premiumFundingDetail.operatingExpense)} />
+              <MetricRow label="Reinsurance Cost" value={formatCurrency(statement.premiumFundingDetail.reinsuranceCost)} />
+              <MetricRow label="Risk Control Investment" value={formatCurrency(statement.premiumFundingDetail.riskControlInvestment)} />
               <div className="border-t border-gray-100 my-2" />
-              <MetricRow label="Available Funding (Surplus)" value={formatCurrency(statement.fundingDetail.availableFunding)} />
-              <MetricRow label="Funding Gap / Surplus" value={formatCurrency(statement.fundingDetail.fundingGap)} valueColor={statement.fundingDetail.fundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
-              <MetricRow label="Funding Adequacy Ratio" value={statement.fundingDetail.fundingAdequacyRatio.toFixed(2)} />
-              <MetricRow label="Funding Adequacy Status" value={statement.fundingDetail.fundingAdequacyStatus} valueColor={
-                statement.fundingDetail.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
-                statement.fundingDetail.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
-                statement.fundingDetail.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
-                'text-red-600'
-              } />
-              <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                Funding confidence level is used to evaluate funding adequacy, not to book the accounting reserve. Higher confidence requires more capital cushion.
-              </p>
+              <MetricRow label="Required Funding Premium" value={formatCurrency(statement.premiumFundingDetail.requiredFundingPremium)} valueColor="text-amber-600" />
+              <MetricRow label="Actual Gross Premium" value={formatCurrency(statement.premiumFundingDetail.actualPremium)} />
+              <MetricRow label="Premium Funding Gap / Surplus" value={formatCurrency(statement.premiumFundingDetail.premiumFundingGap)} valueColor={statement.premiumFundingDetail.premiumFundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <MetricRow label="Premium Funding Ratio" value={statement.premiumFundingDetail.premiumFundingRatio.toFixed(3)} valueColor={statusColor(statement.premiumFundingDetail.premiumFundingAdequacyStatus)} />
+              <MetricRow label="Premium Funding Adequacy" value={statement.premiumFundingDetail.premiumFundingAdequacyStatus} valueColor={statusColor(statement.premiumFundingDetail.premiumFundingAdequacyStatus)} />
+              <div className="border-t border-gray-100 my-2" />
+              <MetricRow label="Indicated Funding Rate per $100" value={`$${statement.premiumFundingDetail.indicatedFundingRatePer100.toFixed(2)}`} valueColor="text-amber-600" />
+              <MetricRow label="Actual Rate per $100" value={`$${statement.premiumFundingDetail.actualRatePer100.toFixed(2)}`} />
+              <MetricRow label="Rate Funding Gap per $100" value={`$${statement.premiumFundingDetail.rateFundingGapPer100.toFixed(2)}`} valueColor={statement.premiumFundingDetail.rateFundingGapPer100 >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <MetricRow label="Rate Adequacy Ratio" value={statement.premiumFundingDetail.rateAdequacyRatio.toFixed(3)} valueColor={statusColor(statement.premiumFundingDetail.premiumFundingAdequacyStatus)} />
+            </StatementCard>
+
+            {/* Capital / Surplus Cushion */}
+            <StatementCard title="Capital / Surplus Cushion" icon={<BarChart3 size={16} className="text-blue-600" />}>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Capital cushion compares available surplus to CLF-loaded expected unpaid losses. This is separate from rate / premium adequacy. CLF does not directly reduce accounting surplus.
+                </p>
+              </div>
+              <MetricRow label="Expected Net Unpaid Loss" value={formatCurrency(statement.capitalCushionDetail.expectedNetUnpaidLoss)} />
+              <MetricRow label="CLF Applied" value={statement.capitalCushionDetail.selectedFundingCLF.toFixed(3)} />
+              <MetricRow label="Net Funding Target (CLF-Loaded)" value={formatCurrency(statement.capitalCushionDetail.netFundingTarget)} valueColor="text-amber-600" />
+              <div className="border-t border-gray-100 my-2" />
+              <MetricRow label="Available Surplus" value={formatCurrency(statement.capitalCushionDetail.availableSurplus)} />
+              <MetricRow label="Capital Funding Gap / Surplus" value={formatCurrency(statement.capitalCushionDetail.capitalFundingGap)} valueColor={statement.capitalCushionDetail.capitalFundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <MetricRow label="Capital Adequacy Ratio" value={statement.capitalCushionDetail.capitalAdequacyRatio.toFixed(3)} valueColor={statusColor(statement.capitalCushionDetail.capitalAdequacyStatus)} />
+              <MetricRow label="Capital Adequacy Status" value={statement.capitalCushionDetail.capitalAdequacyStatus} valueColor={statusColor(statement.capitalCushionDetail.capitalAdequacyStatus)} />
             </StatementCard>
 
             <StatementCard title="Reinsurance Detail">
@@ -153,6 +174,7 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <MetricRow label="Cession Ratio" value={formatPct(statement.reinsuranceDetail.cessionRatio)} />
               <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded p-2 mt-2">Reinsurance recovery reduces net retained losses but does not reduce gross losses.</p>
             </StatementCard>
+
             <StatementCard title="Key Ratios">
               <MetricRow label="Payroll Exposure ($M)" value={`$${statement.keyRatios.activeExposure.toFixed(2)}M`} />
               <MetricRow label="Rate per $100 Payroll" value={`$${statement.keyRatios.ratePer100.toFixed(2)}`} />
@@ -168,12 +190,7 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
               <MetricRow label="Surplus to Premium Ratio" value={formatPct(statement.keyRatios.surplusToPremiumRatio)} />
               <MetricRow label="Market Share" value={formatPct(statement.keyRatios.marketShare)} />
               <MetricRow label="Member Retention Rate" value={formatPct(statement.keyRatios.memberRetentionRate)} />
-              <MetricRow label="Funding Adequacy" value={statement.keyRatios.fundingAdequacyStatus} valueColor={
-                statement.keyRatios.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
-                statement.keyRatios.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
-                statement.keyRatios.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
-                'text-red-600'
-              } />
+              <MetricRow label="Premium Funding Adequacy" value={statement.keyRatios.fundingAdequacyStatus} valueColor={statusColor(statement.keyRatios.fundingAdequacyStatus)} />
             </StatementCard>
           </div>
         </div>
@@ -187,6 +204,13 @@ export default function FinancialsPage({ lockedResults, startingFinancials, star
       )}
     </div>
   );
+}
+
+function statusColor(status: string): string {
+  if (status === 'Strong') return 'text-emerald-600';
+  if (status === 'Adequate') return 'text-emerald-600';
+  if (status === 'Thin') return 'text-amber-600';
+  return 'text-red-600';
 }
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {

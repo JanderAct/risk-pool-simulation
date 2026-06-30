@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClipboardList, Zap, TrendingUp, Shield, DollarSign, AlertTriangle, Target } from 'lucide-react';
+import { ClipboardList, Zap, TrendingUp, Shield, DollarSign, AlertTriangle, Target, BarChart3 } from 'lucide-react';
 import type { ResultSet } from '../types/simulation';
 import { formatCurrency, formatPct, colorForRatio, colorForNetIncome, colorForSurplus } from '../utils/formatters';
 import { REINSURANCE_PROGRAMS } from '../data/defaultAssumptions';
@@ -122,34 +122,51 @@ export default function ResultsPage({ lockedResults }: ResultsPageProps) {
               <p className="text-xs text-gray-400 mt-2">
                 Balance check: {formatCurrency(result.totalAssets)} (Assets) - {formatCurrency(result.totalLiabilities)} (Liabilities) = {formatCurrency(result.endingSurplus)}
               </p>
-              {Math.abs(result.surplusTieOutDifference) >= 100 && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Note: Tie-out difference may indicate prior-year reserve adjustments or other non-income items.
-                </p>
-              )}
             </ResultCard>
 
-            {/* Funding Target & Adequacy */}
-            <ResultCard title="Funding Target & Adequacy" icon={<Target size={16} />}>
-              <Row label="Expected Net Unpaid Loss" value={formatCurrency(result.expectedNetUnpaidLoss)} />
-              <Row label="Selected Funding Confidence" value={formatPct(result.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
+            {/* Rate / Premium Funding Adequacy */}
+            <ResultCard title="Rate / Premium Funding Adequacy" icon={<Target size={16} />}>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-xs text-blue-800 leading-relaxed">
+                  Funding confidence level is used to calculate the required funding premium and indicated funding rate. It is <strong>not</strong> used to book the accounting reserve.
+                </p>
+              </div>
+              <Row label="Selected Funding Confidence Level" value={formatPct(result.selectedFundingConfidenceLevel, 0)} valueColor="text-blue-600" />
               <Row label="CLF Applied" value={result.selectedFundingCLF.toFixed(3)} />
               <div className="border-t border-gray-100 my-1" />
-              <Row label="Net Funding Target" value={formatCurrency(result.netFundingTarget)} valueColor="text-amber-600" />
-              <Row label="Funding Margin Needed" value={formatCurrency(result.fundingMarginNeeded)} valueColor={result.fundingMarginNeeded > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+              <Row label="Expected Loss (Pre-CLF)" value={formatCurrency(result.expectedLoss)} />
+              <Row label="CLF-Adjusted Expected Loss" value={formatCurrency(result.clfAdjustedExpectedLoss)} valueColor="text-amber-600" />
+              <Row label="Operating Expense" value={formatCurrency(result.operatingExpense)} />
+              <Row label="Reinsurance Cost" value={formatCurrency(result.reinsuranceCost)} />
+              <Row label="Risk Control Investment" value={formatCurrency(result.riskControlInvestment)} />
               <div className="border-t border-gray-100 my-1" />
-              <Row label="Available Funding (Surplus)" value={formatCurrency(result.availableFunding)} />
-              <Row label="Funding Gap / Surplus" value={formatCurrency(result.fundingGap)} valueColor={result.fundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
-              <Row label="Funding Adequacy Ratio" value={result.fundingAdequacyRatio.toFixed(2)} />
-              <Row label="Funding Adequacy Status" value={result.fundingAdequacyStatus} valueColor={
-                result.fundingAdequacyStatus === 'Strong' ? 'text-emerald-600' :
-                result.fundingAdequacyStatus === 'Adequate' ? 'text-emerald-600' :
-                result.fundingAdequacyStatus === 'Thin' ? 'text-amber-600' :
-                'text-red-600'
-              } />
-              <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                Funding confidence level is used to evaluate funding adequacy, not to book the accounting reserve. Higher confidence requires more capital cushion.
-              </p>
+              <Row label="Required Funding Premium" value={formatCurrency(result.requiredFundingPremium)} valueColor="text-amber-600" bold />
+              <Row label="Actual Gross Premium" value={formatCurrency(result.actualPremium)} />
+              <Row label="Premium Funding Gap / Surplus" value={formatCurrency(result.premiumFundingGap)} valueColor={result.premiumFundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <Row label="Premium Funding Ratio" value={result.premiumFundingRatio.toFixed(3)} valueColor={statusColor(result.premiumFundingAdequacyStatus)} />
+              <Row label="Premium Funding Adequacy" value={result.premiumFundingAdequacyStatus} valueColor={statusColor(result.premiumFundingAdequacyStatus)} bold />
+              <div className="border-t border-gray-100 my-1" />
+              <Row label="Indicated Funding Rate per $100" value={`$${result.indicatedFundingRatePer100.toFixed(2)}`} valueColor="text-amber-600" />
+              <Row label="Actual Rate per $100" value={`$${result.actualRatePer100.toFixed(2)}`} />
+              <Row label="Rate Funding Gap per $100" value={`$${result.rateFundingGapPer100.toFixed(2)}`} valueColor={result.rateFundingGapPer100 >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <Row label="Rate Adequacy Ratio" value={result.rateAdequacyRatio.toFixed(3)} valueColor={statusColor(result.premiumFundingAdequacyStatus)} />
+            </ResultCard>
+
+            {/* Capital / Surplus Cushion */}
+            <ResultCard title="Capital / Surplus Cushion" icon={<BarChart3 size={16} />}>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3">
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Capital cushion compares available surplus to CLF-loaded expected unpaid losses. This is separate from rate / premium adequacy. CLF does not directly reduce accounting surplus.
+                </p>
+              </div>
+              <Row label="Expected Net Unpaid Loss" value={formatCurrency(result.expectedNetUnpaidLoss)} />
+              <Row label="CLF Applied" value={result.selectedFundingCLF.toFixed(3)} />
+              <Row label="Net Funding Target (CLF-Loaded)" value={formatCurrency(result.netFundingTarget)} valueColor="text-amber-600" />
+              <div className="border-t border-gray-100 my-1" />
+              <Row label="Available Surplus" value={formatCurrency(result.availableSurplus)} />
+              <Row label="Capital Funding Gap / Surplus" value={formatCurrency(result.capitalFundingGap)} valueColor={result.capitalFundingGap >= 0 ? 'text-emerald-600' : 'text-red-600'} />
+              <Row label="Capital Adequacy Ratio" value={result.capitalAdequacyRatio.toFixed(3)} valueColor={statusColor(result.capitalAdequacyStatus)} />
+              <Row label="Capital Adequacy Status" value={result.capitalAdequacyStatus} valueColor={statusColor(result.capitalAdequacyStatus)} bold />
             </ResultCard>
 
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -166,6 +183,13 @@ export default function ResultsPage({ lockedResults }: ResultsPageProps) {
       )}
     </div>
   );
+}
+
+function statusColor(status: string): string {
+  if (status === 'Strong') return 'text-emerald-600';
+  if (status === 'Adequate') return 'text-emerald-600';
+  if (status === 'Thin') return 'text-amber-600';
+  return 'text-red-600';
 }
 
 function ResultCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {

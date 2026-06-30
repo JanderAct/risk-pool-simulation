@@ -161,26 +161,46 @@ export interface ResultSet {
   investedAssets: number;
   investmentIncome: number;
 
-  // Funding Target & Adequacy
-  // The CLF represents a funding target, NOT an accounting reserve.
-  // The player chooses "what confidence level do we want to fund at?"
-  // The selected CLF is applied to expected unpaid losses to derive a funding target.
-  // Funding adequacy compares available capital to that target.
+  // ── Funding Confidence Level (CLF) ─────────────────────────────────────────
+  // The CLF loads the expected loss cost used in the PREMIUM funding calculation.
+  // It does NOT multiply accounting reserves.
   selectedFundingConfidenceLevel: number;  // Player-facing selection (0.50 to 0.95)
-  selectedFundingCLF: number;              // Backend actuarial factor from CLF table
-  expectedGrossUnpaidLoss: number;         // Expected unpaid losses from all cohorts (gross)
+  selectedFundingCLF: number;              // Actuarial factor from CLF table
+
+  // ── A. Rate / Premium Funding Adequacy ─────────────────────────────────────
+  expectedLoss: number;                    // Expected gross loss for this year (pre-CLF)
+  clfAdjustedExpectedLoss: number;         // expectedLoss × selectedFundingCLF
+  requiredFundingPremium: number;          // clfAdjustedExpectedLoss + opEx + reinsCost + rcInvestment
+  actualPremium: number;                   // = grossPremium
+  premiumFundingGap: number;               // actualPremium - requiredFundingPremium
+  premiumFundingRatio: number;             // actualPremium / requiredFundingPremium
+  premiumFundingAdequacyStatus: string;    // "Strong" | "Adequate" | "Thin" | "Deficient"
+
+  indicatedFundingRatePer100: number;      // requiredFundingPremium / (activeExposure × 10,000)
+  actualRatePer100: number;                // = ratePer100
+  rateFundingGapPer100: number;            // actualRatePer100 - indicatedFundingRatePer100
+  rateAdequacyRatio: number;               // actualRatePer100 / indicatedFundingRatePer100
+
+  // ── B. Capital / Surplus Cushion ───────────────────────────────────────────
+  expectedGrossUnpaidLoss: number;         // Sum of unpaid losses across all cohorts (gross)
   expectedReinsuranceRecoverable: number;  // Reinsurance recoverable on unpaid losses
-  expectedNetUnpaidLoss: number;           // Expected unpaid losses net of reinsurance
-  grossFundingTarget: number;             // expectedGrossUnpaidLoss × selectedFundingCLF
+  expectedNetUnpaidLoss: number;           // expectedGrossUnpaidLoss - expectedReinsuranceRecoverable
   netFundingTarget: number;               // expectedNetUnpaidLoss × selectedFundingCLF
-  fundingMarginNeeded: number;            // netFundingTarget - expectedNetUnpaidLoss (positive = need more funding)
-  availableFunding: number;               // endingSurplus = capital available to cover funding target
-  fundingGap: number;                    // availableFunding - netFundingTarget (positive = surplus, negative = gap)
-  fundingAdequacyRatio: number;          // availableFunding / netFundingTarget
-  fundingAdequacyStatus: string;          // "Strong" | "Adequate" | "Thin" | "Deficient"
-  // Legacy compatibility
-  fundingCLF: number;                    // Alias for selectedFundingCLF
-  fundingAdequacyIndicator: string;      // Alias for fundingAdequacyStatus
+  availableSurplus: number;               // = endingSurplus
+  capitalFundingGap: number;             // availableSurplus - netFundingTarget
+  capitalAdequacyRatio: number;          // availableSurplus / netFundingTarget
+  capitalAdequacyStatus: string;         // "Strong" | "Adequate" | "Thin" | "Deficient"
+
+  // ── Legacy compatibility fields ────────────────────────────────────────────
+  fundingCLF: number;                    // = selectedFundingCLF
+  fundingAdequacyRatio: number;          // = premiumFundingRatio
+  fundingAdequacyStatus: string;         // = premiumFundingAdequacyStatus
+  fundingAdequacyIndicator: string;      // = premiumFundingAdequacyStatus
+  // Capital cushion aliases kept for any existing UI references
+  grossFundingTarget: number;            // = expectedGrossUnpaidLoss × selectedFundingCLF
+  fundingMarginNeeded: number;           // = netFundingTarget - expectedNetUnpaidLoss
+  availableFunding: number;              // = availableSurplus
+  fundingGap: number;                   // = capitalFundingGap
 
   // Income statement
   netIncome: number;

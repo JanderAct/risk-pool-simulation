@@ -37,8 +37,8 @@ export interface SurplusRollforward {
   endingSurplus: number;
   change: number;
   changePct: number;
-  surplusFromIncome: number;         // Computed: beginingSurplus + netIncome
-  tieOutDifference: number;          // endingSurplus - surplusFromIncome (should be ~0)
+  surplusFromIncome: number;
+  tieOutDifference: number;
 }
 
 export interface ReinsuranceDetail {
@@ -67,21 +67,37 @@ export interface ReserveDetail {
   netUnpaidReserve: number;
 }
 
-// Funding Target & Adequacy detail
-// The CLF is used to calculate a funding target, NOT an accounting reserve.
-export interface FundingDetail {
-  selectedFundingConfidenceLevel: number;  // Player-facing selection (e.g., 75%)
-  selectedFundingCLF: number;              // Backend actuarial factor
-  expectedGrossUnpaidLoss: number;         // Expected unpaid losses (gross)
-  expectedReinsuranceRecoverable: number;  // Reinsurance on unpaid losses
-  expectedNetUnpaidLoss: number;           // Net of reinsurance
-  grossFundingTarget: number;             // expectedGross × CLF
-  netFundingTarget: number;               // expectedNet × CLF
-  fundingMarginNeeded: number;            // netFundingTarget - expectedNetUnpaid
-  availableFunding: number;               // endingSurplus (capital available)
-  fundingGap: number;                    // availableFunding - netFundingTarget
-  fundingAdequacyRatio: number;          // available / target
-  fundingAdequacyStatus: string;         // "Strong" | "Adequate" | "Thin" | "Deficient"
+// ── A. Rate / Premium Funding Adequacy ─────────────────────────────────────────
+// The CLF loads the expected loss cost used in the premium funding calculation.
+// It does NOT book a larger accounting reserve.
+export interface PremiumFundingDetail {
+  selectedFundingConfidenceLevel: number;
+  selectedFundingCLF: number;
+  expectedLoss: number;
+  clfAdjustedExpectedLoss: number;
+  operatingExpense: number;
+  reinsuranceCost: number;
+  riskControlInvestment: number;
+  requiredFundingPremium: number;
+  actualPremium: number;
+  premiumFundingGap: number;
+  premiumFundingRatio: number;
+  premiumFundingAdequacyStatus: string;
+  indicatedFundingRatePer100: number;
+  actualRatePer100: number;
+  rateFundingGapPer100: number;
+  rateAdequacyRatio: number;
+}
+
+// ── B. Capital / Surplus Cushion ───────────────────────────────────────────────
+export interface CapitalCushionDetail {
+  expectedNetUnpaidLoss: number;
+  selectedFundingCLF: number;
+  netFundingTarget: number;
+  availableSurplus: number;
+  capitalFundingGap: number;
+  capitalAdequacyRatio: number;
+  capitalAdequacyStatus: string;
 }
 
 export interface KeyRatios {
@@ -110,7 +126,8 @@ export interface AnnualFinancialStatement {
   surplusRollforward: SurplusRollforward;
   reinsuranceDetail: ReinsuranceDetail;
   reserveDetail: ReserveDetail;
-  fundingDetail: FundingDetail;
+  premiumFundingDetail: PremiumFundingDetail;
+  capitalCushionDetail: CapitalCushionDetail;
   keyRatios: KeyRatios;
 }
 
@@ -183,20 +200,33 @@ export function deriveAnnualStatement(result: ResultSet): AnnualFinancialStateme
     netUnpaidReserve: result.endingGrossReserve - result.endingReinsRecoverable,
   };
 
-  // Funding detail - CLF is used for funding target, NOT accounting reserve
-  const fundingDetail: FundingDetail = {
+  const premiumFundingDetail: PremiumFundingDetail = {
     selectedFundingConfidenceLevel: result.selectedFundingConfidenceLevel,
     selectedFundingCLF: result.selectedFundingCLF,
-    expectedGrossUnpaidLoss: result.expectedGrossUnpaidLoss,
-    expectedReinsuranceRecoverable: result.expectedReinsuranceRecoverable,
+    expectedLoss: result.expectedLoss,
+    clfAdjustedExpectedLoss: result.clfAdjustedExpectedLoss,
+    operatingExpense: result.operatingExpense,
+    reinsuranceCost: result.reinsuranceCost,
+    riskControlInvestment: result.riskControlInvestment,
+    requiredFundingPremium: result.requiredFundingPremium,
+    actualPremium: result.actualPremium,
+    premiumFundingGap: result.premiumFundingGap,
+    premiumFundingRatio: result.premiumFundingRatio,
+    premiumFundingAdequacyStatus: result.premiumFundingAdequacyStatus,
+    indicatedFundingRatePer100: result.indicatedFundingRatePer100,
+    actualRatePer100: result.actualRatePer100,
+    rateFundingGapPer100: result.rateFundingGapPer100,
+    rateAdequacyRatio: result.rateAdequacyRatio,
+  };
+
+  const capitalCushionDetail: CapitalCushionDetail = {
     expectedNetUnpaidLoss: result.expectedNetUnpaidLoss,
-    grossFundingTarget: result.grossFundingTarget,
+    selectedFundingCLF: result.selectedFundingCLF,
     netFundingTarget: result.netFundingTarget,
-    fundingMarginNeeded: result.fundingMarginNeeded,
-    availableFunding: result.availableFunding,
-    fundingGap: result.fundingGap,
-    fundingAdequacyRatio: result.fundingAdequacyRatio,
-    fundingAdequacyStatus: result.fundingAdequacyStatus,
+    availableSurplus: result.availableSurplus,
+    capitalFundingGap: result.capitalFundingGap,
+    capitalAdequacyRatio: result.capitalAdequacyRatio,
+    capitalAdequacyStatus: result.capitalAdequacyStatus,
   };
 
   const keyRatios: KeyRatios = {
@@ -225,7 +255,8 @@ export function deriveAnnualStatement(result: ResultSet): AnnualFinancialStateme
     surplusRollforward,
     reinsuranceDetail,
     reserveDetail,
-    fundingDetail,
+    premiumFundingDetail,
+    capitalCushionDetail,
     keyRatios,
   };
 }

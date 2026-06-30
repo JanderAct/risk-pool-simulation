@@ -5,32 +5,53 @@ import type { ResultSet } from '../types/simulation';
 export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): string {
   const parts: string[] = [];
 
-  const { decisions, combinedRatio, netIncome, grossUltimateLoss, grossPremium,
+  const {
+    decisions, combinedRatio, netIncome, grossUltimateLoss, grossPremium,
     reinsuranceRecovery, investmentIncome,
-    newMembers, withdrawnMembers, shockLossIncurred, fundingAdequacyIndicator,
-    priorYearDevelopment, endingSurplus } = result;
+    newMembers, withdrawnMembers, shockLossIncurred,
+    priorYearDevelopment, endingSurplus,
+    premiumFundingRatio, premiumFundingAdequacyStatus,
+    indicatedFundingRatePer100, actualRatePer100, rateFundingGapPer100,
+    capitalAdequacyStatus, capitalAdequacyRatio,
+  } = result;
 
   // --- Rate Change ---
   if (decisions.rateChange > 0.10) {
-    parts.push(`You implemented a significant rate increase of ${pct(decisions.rateChange)}, which improved premium adequacy. However, this level of increase puts competitive pressure on member retention.`);
+    parts.push(`A significant rate increase of ${pct(decisions.rateChange)} was applied, improving premium adequacy at the cost of competitive pressure on member retention.`);
   } else if (decisions.rateChange > 0.03) {
     parts.push(`A moderate rate increase of ${pct(decisions.rateChange)} was applied, helping maintain premium adequacy.`);
   } else if (decisions.rateChange < -0.05) {
-    parts.push(`You chose to decrease rates by ${pct(Math.abs(decisions.rateChange))}, improving competitiveness.`);
+    parts.push(`Rates were reduced by ${pct(Math.abs(decisions.rateChange))}, improving competitiveness but reducing the pool's ability to fund at the selected confidence level.`);
   } else if (Math.abs(decisions.rateChange) <= 0.03) {
     parts.push(`Rates were held roughly flat.`);
   }
 
+  // --- Premium Funding Adequacy ---
+  if (premiumFundingAdequacyStatus === 'Deficient') {
+    parts.push(`The actual premium is ${pct(1 - premiumFundingRatio)} below the required funding premium at the selected confidence level, indicating the pool is underfunding relative to its target.`);
+  } else if (premiumFundingAdequacyStatus === 'Thin') {
+    parts.push(`Premium funding is thin — the actual premium covers ${pct(premiumFundingRatio)} of the required funding premium, leaving little margin at the selected confidence level.`);
+  } else if (premiumFundingAdequacyStatus === 'Strong') {
+    parts.push(`Premium funding is strong at ${pct(premiumFundingRatio)} of the required funding premium for the selected confidence level.`);
+  }
+
+  // --- Rate vs Indicated Funding Rate ---
+  if (rateFundingGapPer100 < -0.50) {
+    parts.push(`The actual rate of $${actualRatePer100.toFixed(2)} per $100 payroll is $${Math.abs(rateFundingGapPer100).toFixed(2)} below the indicated funding rate of $${indicatedFundingRatePer100.toFixed(2)}, meaning the rate is inadequate for the selected confidence level.`);
+  } else if (rateFundingGapPer100 > 0.50) {
+    parts.push(`The actual rate of $${actualRatePer100.toFixed(2)} per $100 payroll exceeds the indicated funding rate of $${indicatedFundingRatePer100.toFixed(2)} by $${rateFundingGapPer100.toFixed(2)}, providing a pricing cushion above the selected confidence level.`);
+  }
+
   // --- Underwriting ---
   if (decisions.underwritingStrictness <= 2) {
-    parts.push(`With very flexible underwriting, the pool was highly accessible, supporting member growth. However, this creates adverse selection risk.`);
+    parts.push(`Flexible underwriting standards kept the pool accessible for growth, but increase adverse selection risk.`);
   } else if (decisions.underwritingStrictness >= 8) {
-    parts.push(`Strict underwriting standards improved average risk quality, reducing expected losses and tail risk.`);
+    parts.push(`Strict underwriting improved average risk quality, reducing expected losses and tail risk.`);
   }
 
   // --- Shock Loss ---
   if (shockLossIncurred) {
-    parts.push(`A shock loss event occurred this year, significantly increasing gross losses.`);
+    parts.push(`A shock loss event occurred this year, significantly increasing gross losses above expected.`);
   }
 
   // --- Loss Performance ---
@@ -52,7 +73,7 @@ export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): 
   if (decisions.reinsuranceLevel === 0) {
     parts.push(`No reinsurance protection was in place.`);
   } else if (reinsuranceRecovery > 0) {
-    parts.push(`Reinsurance generated $${fmt(reinsuranceRecovery)} in recoveries, reducing net losses.`);
+    parts.push(`Reinsurance generated $${fmt(reinsuranceRecovery)} in recoveries, reducing net retained losses.`);
   } else if (decisions.reinsuranceLevel > 0) {
     parts.push(`Reinsurance was in place but losses did not reach the attachment point.`);
   }
@@ -76,15 +97,13 @@ export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): 
     parts.push(`${withdrawnMembers} members withdrew from the pool.`);
   }
 
-  // --- Funding ---
-  if (fundingAdequacyIndicator === 'Deficient' || fundingAdequacyIndicator === 'Strong' || fundingAdequacyIndicator === 'Adequate' || fundingAdequacyIndicator === 'Thin') {
-    if (result.fundingAdequacyStatus === 'Deficient') {
-      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, indicating insufficient capital relative to the funding target.`);
-    } else if (result.fundingAdequacyStatus === 'Thin') {
-      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, with modest capital cushion above the funding target.`);
-    } else {
-      parts.push(`The pool's funding position is rated ${result.fundingAdequacyStatus}, with adequate capital cushion above the funding target.`);
-    }
+  // --- Capital / Surplus Cushion ---
+  if (capitalAdequacyStatus === 'Deficient') {
+    parts.push(`The capital cushion is rated Deficient (ratio: ${capitalAdequacyRatio.toFixed(2)}), meaning available surplus falls short of the CLF-loaded unpaid loss target. Note: the CLF does not directly reduce accounting surplus — this reflects a surplus shortfall relative to the funding confidence target.`);
+  } else if (capitalAdequacyStatus === 'Thin') {
+    parts.push(`The capital cushion is rated Thin (ratio: ${capitalAdequacyRatio.toFixed(2)}), with modest surplus above the CLF-loaded unpaid loss target.`);
+  } else if (capitalAdequacyStatus === 'Strong') {
+    parts.push(`The capital cushion is Strong (ratio: ${capitalAdequacyRatio.toFixed(2)}), with ample surplus relative to the CLF-loaded unpaid loss target.`);
   }
 
   // --- Prior Year Development ---
@@ -92,7 +111,7 @@ export function generateNarrative(result: ResultSet, _priorResult?: ResultSet): 
     if (priorYearDevelopment > 0) {
       parts.push(`Prior year reserves developed favorably, releasing $${fmt(priorYearDevelopment)} to income.`);
     } else {
-      parts.push(`Prior year reserves developed adversely, requiring $${fmt(Math.abs(priorYearDevelopment))} of strengthening.`);
+      parts.push(`Prior year reserves developed adversely, requiring $${fmt(Math.abs(priorYearDevelopment))} of reserve strengthening.`);
     }
   }
 
